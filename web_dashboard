@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+from flask import Flask, render_template, jsonify
+import csv
+from pathlib import Path
+from datetime import datetime
+import json
+
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    """Main page"""
+    return render_template('dashboard.html')
+
+@app.route('/api/latest')
+def get_latest():
+    """Get latest data"""
+    log_dir = Path('plant_data')
+    csv_file = log_dir / f"plant_log_{datetime.now().strftime('%Y%m%d')}.csv"
+    
+    try:
+        with open(csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            if rows:
+                return jsonify(rows[-1])
+    except:
+        pass
+    
+    return jsonify({})
+
+@app.route('/api/chart-data')
+def get_chart_data():
+    """Get chart data"""
+    log_dir = Path('plant_data')
+    csv_file = log_dir / f"plant_log_{datetime.now().strftime('%Y%m%d')}.csv"
+    
+    temps = []
+    moistures = []
+    times = []
+    
+    try:
+        with open(csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    times.append(row['Timestamp'].split(' ')[1])  # Get time only
+                    if row['Temperature(C)'] != 'N/A':
+                        temps.append(float(row['Temperature(C)']))
+                    if row['SoilMoisture(%)'] != 'N/A':
+                        moistures.append(float(row['SoilMoisture(%)']))
+                except:
+                    pass
+    except:
+        pass
+    
+    return jsonify({
+        'times': times,
+        'temperatures': temps,
+        'moistures': moistures
+    })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=False)

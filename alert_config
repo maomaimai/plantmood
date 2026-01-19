@@ -1,0 +1,14 @@
+{
+  "email": {
+    "enabled": true,
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
+    "sender": "your_email@gmail.com",
+    "password": "your_app_password",
+    "recipient": "recipient@gmail.com"
+  },
+  "push": {
+    "enabled": false,
+    "webhook_url": "https://maker.ifttt.com/trigger/plant_alert/with/key/your_key"
+  }
+}
