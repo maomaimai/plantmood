@@ -243,4 +243,31 @@ def main():
         test_calibration(soil_channel, dry_voltage, wet_voltage)
     
     # Save calibration
-    print("\nD
+    print("\nDo you want to save calibration values? (y/n): ", end="")
+    if input().lower() == 'y':
+        save_calibration(dry_voltage, wet_voltage)
+    
+    # Print usage instructions
+    print("\n" + "="*60)
+    print("NEXT STEPS")
+    print("="*60)
+    print("\nUpdate plant_monitor_complete.py:")
+    print(f"\nFind these lines (around line 387-388):")
+    print(f"    DRY_VOLTAGE = 0.586")
+    print(f"    WET_VOLTAGE = 0.585")
+    print(f"\nReplace with your calibration values:")
+    print(f"    DRY_VOLTAGE = {dry_voltage:.3f}")
+    print(f"    WET_VOLTAGE = {wet_voltage:.3f}")
+    print("\nThen run: python3 plant_monitor_complete.py")
+    print("="*60 + "\n")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n✓ Calibration cancelled")
+    except Exception as e:
+        print(f"\n✗ Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
