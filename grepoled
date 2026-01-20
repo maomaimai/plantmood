@@ -1,0 +1,1 @@
+grep -n -i "oled\|ssd1306\|display" ~/plantmood/plantmood/plant_monitor_complete
