@@ -1,0 +1,21 @@
+from board import SCL, SDA
+import busio
+import adafruit_ssd1306
+from PIL import Image, ImageDraw, ImageFont
+
+i2c = busio.I2C(SCL, SDA)
+oled = adafruit_ssd1306.SSD1306_I2C(128, 64, i2c, addr=0x3c)
+
+image = Image.new("1", (128, 64))
+draw = ImageDraw.Draw(image)
+
+draw.rectangle((0, 0, 127, 63), outline=0, fill=0)
+draw.text((0, 0), "PlantMood", fill=255)
+draw.text((0, 20), "Temp: 23.4C", fill=255)
+draw.text((0, 35), "Humidity: 11%", fill=255)
+draw.text((0, 50), "Soil: 3.7%", fill=255)
+
+oled.image(image)
+oled.show()
+
+print("Text displayed!")
