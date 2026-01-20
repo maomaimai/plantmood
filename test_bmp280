@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+import board
+import busio
+import time
+
+i2c = busio.I2C(board.SCL, board.SDA)
+
+print("Testing BMP280...\n")
+
+# 先测试 0x76
+print("Trying address 0x76...")
+try:
+    import adafruit_bmp280
+    bmp = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=0x76)
+    temp = bmp.temperature
+    print(f"✓ Success at 0x76: Temperature = {temp:.2f}°C")
+except Exception as e:
+    print(f"✗ Failed: {e}")
+    
+    # 尝试 0x77
+    print("\nTrying address 0x77...")
+    try:
+        bmp = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=0x77)
+        temp = bmp.temperature
+        print(f"✓ Success at 0x77: Temperature = {temp:.2f}°C")
+    except Exception as e2:
+        print(f"✗ Also failed: {e2}")
