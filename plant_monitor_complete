@@ -43,18 +43,19 @@ class PlantStatus:
     }
     
     def __init__(self):
-        self.current_status = self.PERFECT
+        self.current_status = self.HAPPY
         self.emoji = self.EMOJI[self.current_status]
         self.message = self.MESSAGE[self.current_status]
     
     def update(self, temperature, light_lux, soil_moisture):
         """
         Update plant status based on sensor readings
+        Only use valid sensor data for decision-making.
         
         Args:
-            temperature: Temperature in Celsius
-            light_lux: Light intensity in lux
-            soil_moisture: Soil moisture percentage (0-100)
+            temperature: Temperature in Celsius (can be None)
+            light_lux: Light intensity in lux (can be None)
+            soil_moisture: Soil moisture percentage 0-100 (can be None)
         """
         
         # Define sensor thresholds
@@ -64,31 +65,59 @@ class PlantStatus:
         TEMP_MIN = 5  # Minimum temperature in Celsius
         TEMP_MAX = 35  # Maximum temperature in Celsius
         
-        # Check if all data is valid
-        if temperature is None or light_lux is None or soil_moisture is None:
-            self.current_status = self.HAPPY
+        # Default to HAPPY if no critical issues are found.
+        # This will be overridden if any specific condition is met.
+        self.current_status = self.HAPPY
+        self.emoji = self.EMOJI[self.current_status]
+        self.message = self.MESSAGE[self.current_status]
+
+        # Priority-based status determination - check critical issues first
+        
+        # Priority 1: Check soil moisture (most critical for direct plant health)
+        if soil_moisture is not None:
+            if soil_moisture < SOIL_MIN:
+                self.current_status = self.THIRSTY
+                self.emoji = self.EMOJI[self.current_status]
+                self.message = self.MESSAGE[self.current_status]
+                return # Stop here, thirsty is a critical state
+            elif soil_moisture > SOIL_MAX:
+                self.current_status = self.THIRSTY # Can also be overwatered, treated as thirsty
+                self.emoji = self.EMOJI[self.current_status]
+                self.message = self.MESSAGE[self.current_status]
+                return # Stop here, overwatered is critical
+
+        # Priority 2: Check temperature (if available)
+        if temperature is not None:
+            if temperature < TEMP_MIN:
+                self.current_status = self.COLD
+                self.emoji = self.EMOJI[self.current_status]
+                self.message = self.MESSAGE[self.current_status]
+                return
+            elif temperature > TEMP_MAX:
+                self.current_status = self.HOT
+                self.emoji = self.EMOJI[self.current_status]
+                self.message = self.MESSAGE[self.current_status]
+                return
+        
+        # Priority 3: Check light (if available)
+        if light_lux is not None and light_lux < LIGHT_MIN:
+            self.current_status = self.DARK
             self.emoji = self.EMOJI[self.current_status]
             self.message = self.MESSAGE[self.current_status]
             return
-        
-        # Priority-based status determination
-        if temperature < TEMP_MIN:
-            self.current_status = self.COLD
-        elif temperature > TEMP_MAX:
-            self.current_status = self.HOT
-        elif light_lux < LIGHT_MIN:
-            self.current_status = self.DARK
-        elif soil_moisture < SOIL_MIN or soil_moisture > SOIL_MAX:
-            self.current_status = self.THIRSTY
-        elif (SOIL_MIN <= soil_moisture <= SOIL_MAX and 
-              light_lux >= 500 and 
-              15 <= temperature <= 30):
+            
+        # If no critical issues, check for PERFECT conditions
+        # Requires all relevant sensors to be working and within optimal range.
+        if (soil_moisture is not None and SOIL_MIN <= soil_moisture <= SOIL_MAX and
+            light_lux is not None and light_lux >= 500 and
+            temperature is not None and 15 <= temperature <= 30):
             self.current_status = self.PERFECT
-        else:
-            self.current_status = self.HAPPY
-        
-        self.emoji = self.EMOJI[self.current_status]
-        self.message = self.MESSAGE[self.current_status]
+            self.emoji = self.EMOJI[self.current_status]
+            self.message = self.MESSAGE[self.current_status]
+            return
+
+        # If we reach here, it means no critical issues were found, and it's not "PERFECT".
+        # So the default "HAPPY" status (set at the beginning) remains.
 
 
 class DataLogger:
@@ -156,7 +185,7 @@ class SensorStation:
         self.oled = None
         
         self._init_i2c()
-        self._init_bme280()
+        self._init_bme280() # Re-enabled BME280
         self._init_bh1750()
         self._init_ads1115()
         self._init_oled()
@@ -185,14 +214,17 @@ class SensorStation:
         """
         try:
             import adafruit_bme280
+            # Add a small delay before BME280 init
+            time.sleep(0.1) 
             self.bme280 = adafruit_bme280.Adafruit_BME280_I2C(
                 self.i2c, address=0x76
             )
             self.bme280.sea_level_pressure = 1013.25
             print("✓ BME280 initialized at 0x76 (Temperature, Humidity, Pressure)")
         except Exception as e:
-            print(f"✗ BME280 failed: {e}")
-            print("  Install with: pip3 install adafruit-circuitpython-bme280")
+            print(f"✗ BME280 initialization failed: {e}")
+            print("  Please ensure wiring is correct, I2C is enabled, and library is installed (pip3 install adafruit-circuitpython-bme280)")
+            self.bme280 = None # Ensure it's None if init fails
     
     def _init_bh1750(self):
         """
@@ -201,6 +233,8 @@ class SensorStation:
         """
         try:
             import adafruit_bh1750
+            # Add a small delay before BH1750 init
+            time.sleep(0.1)
             self.bh1750 = adafruit_bh1750.BH1750(
                 self.i2c, address=0x23
             )
@@ -208,6 +242,7 @@ class SensorStation:
         except Exception as e:
             print(f"✗ BH1750 failed: {e}")
             print("  Install with: pip3 install adafruit-circuitpython-bh1750")
+            self.bh1750 = None # Ensure it's None if init fails
     
     def _init_ads1115(self):
         """
@@ -218,6 +253,8 @@ class SensorStation:
             import adafruit_ads1x15.ads1115 as ADS
             from adafruit_ads1x15.analog_in import AnalogIn
             
+            # Add a small delay before ADS1115 init
+            time.sleep(0.1)
             ads = ADS.ADS1115(self.i2c, address=0x48)
             
             # Use channel 3 (A3) for soil moisture sensor
@@ -226,6 +263,7 @@ class SensorStation:
         except Exception as e:
             print(f"✗ ADS1115 failed: {e}")
             print("  Install with: pip3 install adafruit-circuitpython-ads1x15")
+            self.soil_channel = None # Ensure it's None if init fails
     
     def _init_oled(self):
         """
@@ -234,11 +272,17 @@ class SensorStation:
         """
         try:
             import adafruit_ssd1306
+            # Add a small delay before OLED init
+            time.sleep(0.1)
             self.oled = adafruit_ssd1306.SSD1306_I2C(128, 64, self.i2c, addr=0x3c)
+            # Clear OLED at start
+            self.oled.fill(0)
+            self.oled.show()
             print("✓ OLED display initialized at 0x3c (128x64)")
         except Exception as e:
             print(f"✗ OLED initialization failed: {e}")
-            print("  Install with: pip3 install adafruit-circuitpython-ssd1306")
+            print("  Install with: pip3 install adafruit-circuitpython-ssd1306 and Pillow (pip3 install Pillow)")
+            self.oled = None # Ensure it's None if init fails
     
     def read_temperature(self):
         """
@@ -251,7 +295,7 @@ class SensorStation:
             if self.bme280:
                 return self.bme280.temperature
         except Exception as e:
-            print(f"✗ Temperature read error: {e}")
+            print(f"✗ BME280 Temperature read error: {e}") # More specific error message
         return None
     
     def read_humidity(self):
@@ -265,7 +309,7 @@ class SensorStation:
             if self.bme280:
                 return self.bme280.humidity
         except Exception as e:
-            print(f"✗ Humidity read error: {e}")
+            print(f"✗ BME280 Humidity read error: {e}") # More specific error message
         return None
     
     def read_pressure(self):
@@ -279,7 +323,7 @@ class SensorStation:
             if self.bme280:
                 return self.bme280.pressure
         except Exception as e:
-            print(f"✗ Pressure read error: {e}")
+            print(f"✗ BME280 Pressure read error: {e}") # More specific error message
         return None
     
     def read_light(self):
@@ -316,7 +360,9 @@ class SensorStation:
                 WET_VOLTAGE = 1.358  # Voltage when soil is completely wet
                 
                 # Calculate moisture percentage
-                if voltage >= DRY_VOLTAGE:
+                if DRY_VOLTAGE == WET_VOLTAGE: # Avoid division by zero if calibration is bad
+                    moisture_percent = 0
+                elif voltage >= DRY_VOLTAGE:
                     moisture_percent = 0
                 elif voltage <= WET_VOLTAGE:
                     moisture_percent = 100
@@ -419,44 +465,50 @@ class SensorStation:
             image = Image.new('1', (128, 64))
             draw = ImageDraw.Draw(image)
             
+            # Clear previous drawing
+            draw.rectangle((0, 0, 128, 64), outline=0, fill=0)
+            
             # Load fonts
             try:
-                font_large = ImageFont.truetype(
-                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14
+                # Use a smaller font for better fit on OLED if needed
+                font_title = ImageFont.truetype(
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 13
                 )
-                font_small = ImageFont.truetype(
-                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11
+                font_body = ImageFont.truetype(
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10
                 )
-            except:
+            except Exception as e:
                 # Fallback to default font if TrueType not available
-                font_large = ImageFont.load_default()
-                font_small = font_large
+                # print(f"✗ Font loading failed: {e}. Using default font.") # Optional: print font error
+                font_title = ImageFont.load_default()
+                font_body = font_title
             
             # Line 1: Title with status emoji
             draw.text((0, 0), f"Plant Monitor {self.plant_status.emoji}", 
-                     fill=255, font=font_large)
+                     fill=255, font=font_title)
             
             # Line 2: Temperature and Humidity
-            temp_str = f"{data['temperature']:.1f}C" if data['temperature'] else "N/A"
-            humid_str = f"{data['humidity']:.0f}%" if data['humidity'] else "N/A"
-            draw.text((0, 18), f"T:{temp_str} H:{humid_str}", 
-                     fill=255, font=font_small)
+            temp_str = f"T: {data['temperature']:.1f}C" if data['temperature'] is not None else "T: N/A"
+            humid_str = f"H: {data['humidity']:.0f}%" if data['humidity'] is not None else "H: N/A"
+            draw.text((0, 16), f"{temp_str} {humid_str}", 
+                     fill=255, font=font_body)
             
             # Line 3: Light and Soil Moisture
-            light_str = f"{data['light']:.0f}lux" if data['light'] else "N/A"
-            moist_str = f"{data['soil_moisture']:.0f}%" if data['soil_moisture'] else "N/A"
-            draw.text((0, 32), f"Light:{light_str} Soil:{moist_str}", 
-                     fill=255, font=font_small)
+            light_str = f"L: {data['light']:.0f}lux" if data['light'] is not None else "L: N/A"
+            moist_str = f"S: {data['soil_moisture']:.0f}%" if data['soil_moisture'] is not None else "S: N/A"
+            draw.text((0, 30), f"{light_str} {moist_str}", 
+                     fill=255, font=font_body)
             
             # Line 4: Status message
-            draw.text((0, 46), self.plant_status.message, 
-                     fill=255, font=font_small)
+            draw.text((0, 44), self.plant_status.message, 
+                     fill=255, font=font_body)
             
             # Display image on OLED
             self.oled.image(image)
             self.oled.display()
         except Exception as e:
-            # Silently fail - don't spam console with OLED errors
+            # Silently fail - don't spam console with OLED errors unless it's a critical issue
+            # print(f"✗ OLED update failed: {e}") # Uncomment for debugging OLED issues
             pass
 
 
