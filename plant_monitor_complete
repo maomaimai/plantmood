@@ -1,31 +1,13 @@
 #!/usr/bin/env python3
 """
-Complete Intelligent Plant Monitoring System
-- Real-time sensor data collection
-- Plant emotion display (Emoji + messages)
-- Local data logging to CSV
-- Email alert notifications
-- Web data viewing (optional)
+Plant Monitoring System - Working Version
 """
 
 import time
-import board
-import busio
 import json
 import csv
 from datetime import datetime
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
-import adafruit_bmp280
-import adafruit_bh1750
-import adafruit_ads1x15.ads1115 as ADS
-from adafruit_ads1x15.analog_in import AnalogIn
-import adafruit_ssd1306
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-import threading
-
 
 class PlantStatus:
     """Plant status class"""
@@ -61,202 +43,52 @@ class PlantStatus:
         self.message = self.MESSAGE[self.current_status]
         self.previous_status = None
     
-    def update(self, temperature, pressure, light_lux, soil_moisture):
+    def update(self, temperature, light_lux, soil_moisture):
         """Update plant status based on sensor data"""
         
-        # Save previous status (for detecting status changes)
         self.previous_status = self.current_status
         
-        # Threshold definitions
+        # 定义阈值
         SOIL_MIN = 30
         SOIL_MAX = 80
         LIGHT_MIN = 100
         TEMP_MIN = 5
         TEMP_MAX = 35
         
-        # Priority-based judgment
-        if soil_moisture is not None:
-            if soil_moisture < SOIL_MIN:
-                self.current_status = self.THIRSTY
-            elif soil_moisture > SOIL_MAX:
-                self.current_status = self.THIRSTY
-            elif light_lux is not None and light_lux < LIGHT_MIN:
-                self.current_status = self.DARK
-            elif temperature is not None:
-                if temperature < TEMP_MIN:
-                    self.current_status = self.COLD
-                elif temperature > TEMP_MAX:
-                    self.current_status = self.HOT
-                elif (30 <= soil_moisture <= 80 and light_lux >= 500 and 15 <= temperature <= 30):
-                    self.current_status = self.PERFECT
-                else:
-                    self.current_status = self.HAPPY
-            else:
-                self.current_status = self.HAPPY
+        # 检查所有数据都有效
+        if temperature is None or light_lux is None or soil_moisture is None:
+            self.current_status = self.HAPPY
+            self.emoji = self.EMOJI[self.current_status]
+            self.message = self.MESSAGE[self.current_status]
+            return
+        
+        # 优先级判断
+        # 1. 温度过冷
+        if temperature < TEMP_MIN:
+            self.current_status = self.COLD
+        # 2. 温度过热
+        elif temperature > TEMP_MAX:
+            self.current_status = self.HOT
+        # 3. 光照不足
+        elif light_lux < LIGHT_MIN:
+            self.current_status = self.DARK
+        # 4. 土壤太干
+        elif soil_moisture < SOIL_MIN:
+            self.current_status = self.THIRSTY
+        # 5. 土壤太湿
+        elif soil_moisture > SOIL_MAX:
+            self.current_status = self.THIRSTY
+        # 6. 完美条件
+        elif (SOIL_MIN <= soil_moisture <= SOIL_MAX and 
+              light_lux >= 500 and 
+              15 <= temperature <= 30):
+            self.current_status = self.PERFECT
+        # 7. 良好状态
         else:
             self.current_status = self.HAPPY
         
         self.emoji = self.EMOJI[self.current_status]
         self.message = self.MESSAGE[self.current_status]
-    
-    def status_changed(self):
-        """Check if status has changed"""
-        return self.previous_status != self.current_status
-
-
-class AlertSystem:
-    """Alert system for notifications"""
-    
-    def __init__(self, config_file="alert_config.json"):
-        """Initialize alert system"""
-        self.config = self._load_config(config_file)
-        self.last_alert_time = {}
-        self.alert_cooldown = 300  # 5 minutes cooldown to prevent repeated alerts
-    
-    def _load_config(self, config_file):
-        """Load alert configuration"""
-        try:
-            with open(config_file, 'r') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            print(f"Warning: Config file {config_file} not found")
-            return {
-                "email": {
-                    "enabled": False,
-                    "smtp_server": "smtp.gmail.com",
-                    "smtp_port": 587,
-                    "sender": "your_email@gmail.com",
-                    "password": "your_password",
-                    "recipient": "recipient@gmail.com"
-                },
-                "push": {
-                    "enabled": False,
-                    "webhook_url": ""
-                }
-            }
-    
-    def send_email_alert(self, subject, message):
-        """Send email alert"""
-        if not self.config["email"]["enabled"]:
-            return False
-        
-        try:
-            config = self.config["email"]
-            msg = MIMEMultipart()
-            msg['From'] = config['sender']
-            msg['To'] = config['recipient']
-            msg['Subject'] = subject
-            
-            msg.attach(MIMEText(message, 'plain'))
-            
-            # Send email
-            server = smtplib.SMTP(config['smtp_server'], config['smtp_port'])
-            server.starttls()
-            server.login(config['sender'], config['password'])
-            server.send_message(msg)
-            server.quit()
-            
-            print(f"✓ Email sent: {subject}")
-            return True
-        except Exception as e:
-            print(f"✗ Email send failed: {e}")
-            return False
-    
-    def send_webhook_alert(self, data):
-        """Send webhook notification (for IFTTT or other services)"""
-        if not self.config["push"]["enabled"]:
-            return False
-        
-        try:
-            import requests
-            response = requests.post(
-                self.config["push"]["webhook_url"],
-                json=data,
-                timeout=5
-            )
-            print(f"✓ Webhook sent")
-            return True
-        except Exception as e:
-            print(f"✗ Webhook send failed: {e}")
-            return False
-    
-    def should_alert(self, alert_key):
-        """Check if alert should be sent (prevent frequent alerts)"""
-        now = time.time()
-        if alert_key in self.last_alert_time:
-            if now - self.last_alert_time[alert_key] < self.alert_cooldown:
-                return False
-        
-        self.last_alert_time[alert_key] = now
-        return True
-    
-    def check_and_alert(self, plant_status, data):
-        """Check data and send alerts if necessary"""
-        
-        if not self.should_alert(plant_status.current_status):
-            return
-        
-        alert_key = f"alert_{plant_status.current_status}"
-        
-        if plant_status.current_status == PlantStatus.THIRSTY:
-            subject = "🌱 Plant needs water!"
-            message = f"""
-Your plant is asking for help!
-
-Current soil moisture: {data['soil_moisture']:.1f}%
-Temperature: {data['temperature']:.1f}°C
-Light level: {data['light']:.0f} lux
-
-Please check and water immediately!
-
-Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-            """
-            self.send_email_alert(subject, message)
-        
-        elif plant_status.current_status == PlantStatus.DARK:
-            subject = "🌙 Plant lacks sunlight!"
-            message = f"""
-Your plant needs more light!
-
-Current light intensity: {data['light']:.0f} lux
-Temperature: {data['temperature']:.1f}°C
-Soil moisture: {data['soil_moisture']:.1f}%
-
-Please move the plant to a brighter location!
-
-Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-            """
-            self.send_email_alert(subject, message)
-        
-        elif plant_status.current_status == PlantStatus.HOT:
-            subject = "🔥 Temperature too high!"
-            message = f"""
-Your plant is overheating!
-
-Current temperature: {data['temperature']:.1f}°C
-Light level: {data['light']:.0f} lux
-Soil moisture: {data['soil_moisture']:.1f}%
-
-Please lower the temperature or water the plant!
-
-Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-            """
-            self.send_email_alert(subject, message)
-        
-        elif plant_status.current_status == PlantStatus.COLD:
-            subject = "❄️ Temperature too low!"
-            message = f"""
-Your plant is too cold!
-
-Current temperature: {data['temperature']:.1f}°C
-Light level: {data['light']:.0f} lux
-Soil moisture: {data['soil_moisture']:.1f}%
-
-Please increase the temperature!
-
-Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-            """
-            self.send_email_alert(subject, message)
 
 
 class DataLogger:
@@ -267,10 +99,7 @@ class DataLogger:
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(exist_ok=True)
         
-        # CSV file path
         self.csv_file = self.log_dir / f"plant_log_{datetime.now().strftime('%Y%m%d')}.csv"
-        
-        # Initialize CSV file
         self._init_csv()
     
     def _init_csv(self):
@@ -281,7 +110,6 @@ class DataLogger:
                 writer.writerow([
                     'Timestamp',
                     'Temperature(C)',
-                    'Pressure(hPa)',
                     'Light(lux)',
                     'SoilMoisture(%)',
                     'SoilVoltage(V)',
@@ -296,358 +124,123 @@ class DataLogger:
                 writer = csv.writer(f)
                 writer.writerow([
                     datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    f"{data['temperature']:.2f}" if data['temperature'] else "N/A",
-                    f"{data['pressure']:.2f}" if data['pressure'] else "N/A",
-                    f"{data['light']:.2f}" if data['light'] else "N/A",
-                    f"{data['soil_moisture']:.2f}" if data['soil_moisture'] else "N/A",
-                    f"{data['soil_voltage']:.3f}" if data['soil_voltage'] else "N/A",
+                    f"{data['temperature']:.2f}" if data['temperature'] is not None else "N/A",
+                    f"{data['light']:.2f}" if data['light'] is not None else "N/A",
+                    f"{data['soil_moisture']:.2f}" if data['soil_moisture'] is not None else "N/A",
+                    f"{data['soil_voltage']:.3f}" if data['soil_voltage'] is not None else "N/A",
                     plant_status.current_status,
                     plant_status.message
                 ])
         except Exception as e:
             print(f"✗ Data logging failed: {e}")
-    
-    def generate_report(self):
-        """Generate daily report"""
-        report_file = self.log_dir / f"report_{datetime.now().strftime('%Y%m%d')}.txt"
-        
-        try:
-            # Read CSV data
-            temps = []
-            moistures = []
-            lights = []
-            
-            with open(self.csv_file, 'r') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    try:
-                        if row['Temperature(C)'] != 'N/A':
-                            temps.append(float(row['Temperature(C)']))
-                        if row['SoilMoisture(%)'] != 'N/A':
-                            moistures.append(float(row['SoilMoisture(%)']))
-                        if row['Light(lux)'] != 'N/A':
-                            lights.append(float(row['Light(lux)']))
-                    except ValueError:
-                        pass
-            
-            # Generate report
-            report = f"""
-Plant Monitoring Daily Report
-Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-================================================
-
-Temperature Statistics:
-  Maximum: {max(temps):.2f}°C
-  Minimum: {min(temps):.2f}°C
-  Average: {sum(temps)/len(temps):.2f}°C
-
-Soil Moisture Statistics:
-  Maximum: {max(moistures):.2f}%
-  Minimum: {min(moistures):.2f}%
-  Average: {sum(moistures)/len(moistures):.2f}%
-
-Light Statistics:
-  Maximum: {max(lights):.0f} lux
-  Minimum: {min(lights):.0f} lux
-  Average: {sum(lights)/len(lights):.0f} lux
-
-Total samples: {len(temps)}
-
-================================================
-"""
-            
-            with open(report_file, 'w') as f:
-                f.write(report)
-            
-            print(f"✓ Report generated: {report_file}")
-            return report
-        except Exception as e:
-            print(f"✗ Report generation failed: {e}")
-            return None
 
 
 class SensorStation:
     """Main sensor station class"""
     
     def __init__(self):
-        # Initialize I2C bus
-        self.i2c = busio.I2C(board.SCL, board.SDA)
+        print("Initializing sensors...\n")
         
-        # Initialize sensors
+        self.bmp280 = None
+        self.bh1750 = None
+        self.ads = None
+        self.oled = None
+        
+        self._init_i2c()
         self._init_bmp280()
         self._init_bh1750()
         self._init_ads1115()
         self._init_oled()
         
-        # Initialize plant status, alert system, data logging
         self.plant_status = PlantStatus()
-        self.alert_system = AlertSystem()
         self.data_logger = DataLogger()
         
-        print("All systems initialized successfully!")
+        print("\n✓ System initialized successfully!\n")
+    
+    def _init_i2c(self):
+        """Initialize I2C bus"""
+        try:
+            import board
+            import busio
+            self.i2c = busio.I2C(board.SCL, board.SDA)
+            print("✓ I2C bus initialized")
+        except Exception as e:
+            print(f"✗ I2C initialization failed: {e}")
+            self.i2c = None
     
     def _init_bmp280(self):
-        """Initialize BMP280 temperature and pressure sensor"""
+        """Initialize BMP280 - Try both addresses"""
         try:
-            self.bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(self.i2c, address=0x76)
+            import adafruit_bmp280
+            
+            # 先尝试 0x76
+            try:
+                self.bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(
+                    self.i2c, address=0x76
+                )
+                print("✓ BMP280 (Temperature) initialized at 0x76")
+            except:
+                # 再尝试 0x77
+                self.bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(
+                    self.i2c, address=0x77
+                )
+                print("✓ BMP280 (Temperature) initialized at 0x77")
+            
             self.bmp280.sea_level_pressure = 1013.25
-            print("✓ BMP280 initialized successfully")
         except Exception as e:
             print(f"✗ BMP280 initialization failed: {e}")
-            self.bmp280 = None
     
     def _init_bh1750(self):
-        """Initialize BH1750 light sensor"""
+        """Initialize BH1750"""
         try:
-            self.bh1750 = adafruit_bh1750.BH1750(self.i2c, address=0x23)
-            print("✓ BH1750 initialized successfully")
+            import adafruit_bh1750
+            self.bh1750 = adafruit_bh1750.BH1750(
+                self.i2c, address=0x23
+            )
+            print("✓ BH1750 (Light Sensor) initialized at 0x23")
         except Exception as e:
             print(f"✗ BH1750 initialization failed: {e}")
-            self.bh1750 = None
     
     def _init_ads1115(self):
-        """Initialize ADS1115 ADC (for soil moisture sensor)"""
+        """Initialize ADS1115 - Fixed version"""
         try:
+            import adafruit_ads1x15.ads1115 as ADS
+            from adafruit_ads1x15.analog_in import AnalogIn
+            
             self.ads = ADS.ADS1115(self.i2c, address=0x48)
+            
+            # 使用正确的方式获取通道
             self.soil_channel = AnalogIn(self.ads, ADS.P0)
-            print("✓ ADS1115 initialized successfully")
+            
+            print("✓ ADS1115 (Soil Moisture) initialized at 0x48")
         except Exception as e:
             print(f"✗ ADS1115 initialization failed: {e}")
-            self.ads = None
-            self.soil_channel = None
+            print(f"  Error: {type(e).__name__}: {str(e)}")
+            
+            # 尝试使用通道数字而不是 P0
+            try:
+                import adafruit_ads1x15.ads1115 as ADS
+                from adafruit_ads1x15.analog_in import AnalogIn
+                
+                self.ads = ADS.ADS1115(self.i2c, address=0x48)
+                self.soil_channel = AnalogIn(self.ads, 0)  # 使用数字 0 而不是 ADS.P0
+                print("✓ ADS1115 (Soil Moisture) initialized at 0x48 (using channel 0)")
+            except Exception as e2:
+                print(f"✗ ADS1115 alternative initialization also failed: {e2}")
     
     def _init_oled(self):
-        """Initialize OLED display"""
+        """Initialize OLED Display"""
         try:
-            self.oled = adafruit_ssd1306.SSD1306_I2C(128, 64, self.i2c, addr=0x3C)
-            self.oled.fill(0)
-            self.oled.show()
-            
-            self.image = Image.new("1", (self.oled.width, self.oled.height))
-            self.draw = ImageDraw.Draw(self.image)
-            
-            try:
-                self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 8)
-                self.font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
-                self.font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
-            except:
-                self.font_small = ImageFont.load_default()
-                self.font_medium = self.font_small
-                self.font_large = self.font_small
-            
-            print("✓ OLED initialized successfully")
+            import adafruit_ssd1306
+            self.oled = adafruit_ssd1306.SSD1306_I2C(
+                128, 64, self.i2c, addr=0x3c
+            )
+            print("✓ OLED Display initialized at 0x3c")
         except Exception as e:
             print(f"✗ OLED initialization failed: {e}")
-            self.oled = None
     
     def read_temperature(self):
-        """Read temperature in Celsius"""
-        if self.bmp280:
-            return self.bmp280.temperature
-        return None
-    
-    def read_pressure(self):
-        """Read pressure in hPa"""
-        if self.bmp280:
-            return self.bmp280.pressure
-        return None
-    
-    def read_light(self):
-        """Read light intensity in lux"""
-        if self.bh1750:
-            return self.bh1750.lux
-        return None
-    
-    def read_soil_moisture(self):
-        """
-        Read soil moisture
-        Returns: (raw_voltage, moisture_percentage)
-        """
-        if self.soil_channel:
-            voltage = self.soil_channel.voltage
-            
-            # Calibration values (adjust based on your sensor)
-            dry_value = 2.5    # Voltage when completely dry
-            wet_value = 1.0    # Voltage when completely wet
-            
-            # Calculate moisture percentage
-            if voltage >= dry_value:
-                moisture_percent = 0
-            elif voltage <= wet_value:
-                moisture_percent = 100
-            else:
-                moisture_percent = (dry_value - voltage) / (dry_value - wet_value) * 100
-            
-            return voltage, moisture_percent
-        return None, None
-    
-    def read_all(self):
-        """Read all sensor data"""
-        voltage, moisture = self.read_soil_moisture()
-        
-        data = {
-            'temperature': self.read_temperature(),
-            'pressure': self.read_pressure(),
-            'light': self.read_light(),
-            'soil_voltage': voltage,
-            'soil_moisture': moisture
-        }
-        return data
-    
-    def display_emoji_view(self, data):
-        """Display plant emotion page (large emoji + message)"""
-        if not self.oled:
-            return
-        
-        self.draw.rectangle((0, 0, self.oled.width, self.oled.height), outline=0, fill=0)
-        
-        self.plant_status.update(
-            data['temperature'],
-            data['pressure'],
-            data['light'],
-            data['soil_moisture']
-        )
-        
-        # Draw large emoji
-        self.draw.text(
-            (50, 5),
-            self.plant_status.emoji,
-            font=self.font_large,
-            fill=255
-        )
-        
-        # Draw message
-        self.draw.text(
-            (5, 30),
-            self.plant_status.message,
-            font=self.font_small,
-            fill=255
-        )
-        
-        # Draw data
-        y = 45
-        if data['temperature'] is not None:
-            self.draw.text((5, y), f"T:{data['temperature']:.0f}C", font=self.font_small, fill=255)
-        
-        if data['soil_moisture'] is not None:
-            self.draw.text((50, y), f"S:{data['soil_moisture']:.0f}%", font=self.font_small, fill=255)
-        
-        if data['light'] is not None:
-            self.draw.text((5, y+8), f"L:{data['light']:.0f}lx", font=self.font_small, fill=255)
-        
-        self.oled.image(self.image)
-        self.oled.show()
-    
-    def display_data_view(self, data):
-        """Display detailed data page"""
-        if not self.oled:
-            return
-        
-        self.draw.rectangle((0, 0, self.oled.width, self.oled.height), outline=0, fill=0)
-        
-        self.draw.text((0, 0), "Sensor Data", font=self.font_medium, fill=255)
-        self.draw.line((0, 10, self.oled.width, 10), fill=255)
-        
-        y = 14
-        line_height = 9
-        
-        if data['temperature'] is not None:
-            self.draw.text((0, y), f"Temp: {data['temperature']:.1f}C", font=self.font_small, fill=255)
-        y += line_height
-        
-        if data['pressure'] is not None:
-            self.draw.text((0, y), f"Press: {data['pressure']:.0f}hPa", font=self.font_small, fill=255)
-        y += line_height
-        
-        if data['light'] is not None:
-            self.draw.text((0, y), f"Light: {data['light']:.0f}lux", font=self.font_small, fill=255)
-        y += line_height
-        
-        if data['soil_moisture'] is not None:
-            self.draw.text((0, y), f"Soil: {data['soil_moisture']:.0f}%", font=self.font_small, fill=255)
-        
-        self.oled.image(self.image)
-        self.oled.show()
-    
-    def print_data(self, data):
-        """Print data to terminal"""
-        print("\n" + "="*50)
-        print(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Plant Status: {self.plant_status.emoji} {self.plant_status.message}")
-        print("="*50)
-        
-        if data['temperature'] is not None:
-            print(f"Temperature:  {data['temperature']:.2f} °C")
-        
-        if data['pressure'] is not None:
-            print(f"Pressure:     {data['pressure']:.2f} hPa")
-        
-        if data['light'] is not None:
-            print(f"Light Level:  {data['light']:.2f} lux")
-        
-        if data['soil_moisture'] is not None:
-            print(f"Soil Moisture: {data['soil_moisture']:.1f}% (Voltage: {data['soil_voltage']:.3f}V)")
-        
-        print("="*50)
-
-
-def main():
-    """Main program"""
-    print("Initializing system...")
-    station = SensorStation()
-    
-    print("\nStarting data collection (Press Ctrl+C to exit)\n")
-    
-    display_mode = 0
-    mode_switch_interval = 5
-    counter = 0
-    
-    try:
-        while True:
-            # Read all data
-            data = station.read_all()
-            
-            # Update plant status
-            station.plant_status.update(
-                data['temperature'],
-                data['pressure'],
-                data['light'],
-                data['soil_moisture']
-            )
-            
-            # Print data to terminal
-            station.print_data(data)
-            
-            # Log data to file
-            station.data_logger.log_data(data, station.plant_status)
-            
-            # Check and send alerts
-            station.alert_system.check_and_alert(station.plant_status, data)
-            
-            # Display data
-            if counter % mode_switch_interval == 0:
-                display_mode = 1 - display_mode
-            
-            if display_mode == 0:
-                station.display_emoji_view(data)
-            else:
-                station.display_data_view(data)
-            
-            counter += 1
-            time.sleep(3)
-    
-    except KeyboardInterrupt:
-        print("\n\nProgram exited")
-        
-        # Generate daily report
-        print("\nGenerating daily report...")
-        station.data_logger.generate_report()
-        
-        # Clear OLED
-        if station.oled:
-            station.oled.fill(0)
-            station.oled.show()
-
-
-if __name__ == "__main__":
-    main()
+        """Read temperature"""
+        try:
+            if self.bmp280:
+                return self.bmp280.temperature
