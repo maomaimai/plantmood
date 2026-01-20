@@ -1,0 +1,4 @@
+import adafruit_bme280
+
+print("adafruit_bme280 module contents:")
+print(dir(adafruit_bme280))
