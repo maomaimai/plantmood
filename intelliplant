@@ -61,7 +61,7 @@ class PlantStatus:
         # Define sensor thresholds
         SOIL_MIN = 30  # Minimum soil moisture percentage
         SOIL_MAX = 80  # Maximum soil moisture percentage
-        LIGHT_MIN = 100  # Minimum light in lux
+        LIGHT_MIN = 10  # Minimum light in lux
         TEMP_MIN = 5  # Minimum temperature in Celsius
         TEMP_MAX = 35  # Maximum temperature in Celsius
         
