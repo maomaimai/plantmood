@@ -273,7 +273,7 @@ class SensorStation:
         try:
             import adafruit_ssd1306
             # Add a small delay before OLED init
-            time.sleep(0.1)
+            time.sleep(0.5)
             self.oled = adafruit_ssd1306.SSD1306_I2C(128, 64, self.i2c, addr=0x3c)
             # Clear OLED at start
             self.oled.fill(0)
