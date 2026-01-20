@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+import board
+import busio
+
+i2c = busio.I2C(board.SCL, board.SDA)
+
+print("Direct I2C communication test\n")
+
+# BMP280 芯片 ID 寄存器是 0xD9
+address = 0x76
+register = 0xD9
+
+try:
+    # 读取 1 字节
+    result = bytearray(1)
+    i2c.readfrom_into(address, result)
+    chip_id = result[0]
+    
+    print(f"✓ I2C communication OK at 0x76")
+    print(f"  Chip ID register (0xD9): 0x{chip_id:02x}")
+    
+    if chip_id == 0x58:
+        print("  ✓ This is BMP280! (expected ID: 0x58)")
+    elif chip_id == 0x60:
+        print("  ✗ Chip ID is 0x60 (not standard BMP280)")
+        print("  Maybe it's BME280 (has humidity sensor)?")
+    else:
+        print(f"  ? Unknown chip ID: 0x{chip_id:02x}")
+        
+except Exception as e:
+    print(f"✗ Failed: {e}")
