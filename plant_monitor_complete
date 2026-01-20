@@ -477,11 +477,6 @@ class SensorStation:
                 font_body = ImageFont.truetype(
                     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10
                 )
-            except Exception as e:
-                # Fallback to default font if TrueType not available
-                # print(f"✗ Font loading failed: {e}. Using default font.") # Optional: print font error
-                font_title = ImageFont.load_default()
-                font_body = font_title
             
             # Line 1: Title with status emoji
             draw.text((0, 0), f"Plant Monitor {self.plant_status.emoji}", 
