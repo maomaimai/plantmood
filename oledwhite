@@ -12,4 +12,3 @@ oled.fill(1)  # 全屏白色
 oled.show()
 
 print("OLED should be WHITE now")
-EOF
