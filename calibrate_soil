@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""
+Soil Moisture Sensor Calibration
+"""
+import board
+import busio
+import time
+
+i2c = busio.I2C(board.SCL, board.SDA)
+
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
+
+ads = ADS.ADS1115(i2c, address=0x48)
+
+try:
+    soil_channel = AnalogIn(ads, ADS.P0)
+except:
+    soil_channel = AnalogIn(ads, 0)
+
+print("="*60)
+print("SOIL MOISTURE SENSOR CALIBRATION")
+print("="*60)
+
+print("\n📍 Current Status: Your soil is VERY DRY")
+print("   (你说花盆的土很干)\n")
+
+dry_readings = []
+print("Reading DRY soil voltage (takes 10 readings)...\n")
+for i in range(10):
+    voltage = soil_channel.voltage
+    dry_readings.append(voltage)
+    print(f"  Reading {i+1}: {voltage:.3f}V")
+    time.sleep(0.5)
+
+dry_voltage = sum(dry_readings) / len(dry_readings)
+print(f"\n✓ Average DRY voltage: {dry_voltage:.3f}V")
+
+print("\n" + "="*60)
+print("Now water your plant generously until soil is VERY WET")
+print("(现在给植物浇大量的水，直到土壤非常湿润)")
+print("="*60)
+
+input("\nPress ENTER when soil is WET...")
+
+wet_readings = []
+print("\nReading WET soil voltage (takes 10 readings)...\n")
+for i in range(10):
+    voltage = soil_channel.voltage
+    wet_readings.append(voltage)
+    print(f"  Reading {i+1}: {voltage:.3f}V")
+    time.sleep(0.5)
+
+wet_voltage = sum(wet_readings) / len(wet_readings)
+print(f"\n✓ Average WET voltage: {wet_voltage:.3f}V")
+
+print("\n" + "="*60)
+print("CALIBRATION RESULTS")
+print("="*60)
+print(f"DRY:  {dry_voltage:.3f}V")
+print(f"WET:  {wet_voltage:.3f}V")
+print("="*60)
+
+print("\n📝 Use these values in your code:\n")
+print(f"DRY_VOLTAGE = {dry_voltage:.3f}")
+print(f"WET_VOLTAGE = {wet_voltage:.3f}")
