@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""
+Sensor Diagnostics Program
+"""
+
+import time
+import board
+import busio
+
+print("="*60)
+print("SENSOR DIAGNOSTICS")
+print("="*60)
+
+# Initialize I2C
+try:
+    i2c = busio.I2C(board.SCL, board.SDA)
+    print("\n✓ I2C bus initialized")
+except Exception as e:
+    print(f"\n✗ I2C initialization failed: {e}")
+    exit(1)
+
+# Test BMP280 (Temperature & Pressure)
+print("\n--- Testing BMP280 (Temperature) ---")
+try:
+    import adafruit_bmp280
+    bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=0x76)
+    
+    temperature = bmp280.temperature
+    pressure = bmp280.pressure
+    altitude = bmp280.altitude
+    
+    print(f"✓ BMP280 connected at 0x76")
+    print(f"  Temperature: {temperature:.2f} °C")
+    print(f"  Pressure: {pressure:.2f} hPa")
+    print(f"  Altitude: {altitude:.2f} m")
+except Exception as e:
+    print(f"✗ BMP280 error: {e}")
+    print("  Try different address: 0x77")
+
+# Test BH1750 (Light)
+print("\n--- Testing BH1750 (Light Sensor) ---")
+try:
+    import adafruit_bh1750
+    bh1750 = adafruit_bh1750.BH1750(i2c, address=0x23)
+    
+    time.sleep(0.5)
+    light = bh1750.lux
+    
+    print(f"✓ BH1750 connected at 0x23")
+    print(f"  Light Level: {light:.2f} lux")
+except Exception as e:
+    print(f"✗ BH1750 error: {e}")
+    print("  Try different address: 0x5c")
+
+# Test ADS1115 (Soil Moisture)
+print("\n--- Testing ADS1115 (Soil Moisture) ---")
+try:
+    import adafruit_ads1x15.ads1115 as ADS
+    from adafruit_ads1x15.analog_in import AnalogIn
+    
+    ads = ADS.ADS1115(i2c, address=0x48)
+    channel0 = AnalogIn(ads, ADS.P0)
+    
+    time.sleep(0.1)
+    voltage = channel0.voltage
+    
+    print(f"✓ ADS1115 connected at 0x48")
+    print(f"  Channel 0 Voltage: {voltage:.3f} V")
+    print(f"  All channels:")
+    
+    for i in range(4):
+        if i == 0:
+            ch = AnalogIn(ads, ADS.P0)
+        elif i == 1:
+            ch = AnalogIn(ads, ADS.P1)
+        elif i == 2:
+            ch = AnalogIn(ads, ADS.P2)
+        else:
+            ch = AnalogIn(ads, ADS.P3)
+        
+        print(f"    Channel {i}: {ch.voltage:.3f} V")
+        time.sleep(0.05)
+        
+except Exception as e:
+    print(f"✗ ADS1115 error: {e}")
+    print("  Try different address: 0x49, 0x4a, or 0x4b")
+
+# Test OLED (if available)
+print("\n--- Testing OLED Display ---")
+try:
+    import adafruit_ssd1306
+    oled = adafruit_ssd1306.SSD1306_I2C(128, 64, i2c, addr=0x3c)
+    print(f"✓ OLED connected at 0x3c")
+except:
+    try:
+        oled = adafruit_ssd1306.SSD1306_I2C(128, 64, i2c, addr=0x3d)
+        print(f"✓ OLED connected at 0x3d")
+    except Exception as e:
+        print(f"✗ OLED error: {e}")
+
+print("\n" + "="*60)
+print("DIAGNOSTICS COMPLETE")
+print("="*60)
