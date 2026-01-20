@@ -1,344 +1,180 @@
 #!/usr/bin/env python3
 """
-Plant Monitoring System - Fixed Version
+Plant Mood Monitor - Complete Version
+监测植物土壤湿度并在OLED屏幕上显示表情
 """
 
 import time
-import csv
-from datetime import datetime
-from pathlib import Path
+import board
+import busio
+from PIL import Image, ImageDraw, ImageFont
 
-class PlantStatus:
-    """Plant status class"""
-    
-    HAPPY = "happy"
-    THIRSTY = "thirsty"
-    DARK = "dark"
-    HOT = "hot"
-    COLD = "cold"
-    PERFECT = "perfect"
-    
-    EMOJI = {
-        "happy": "😊",
-        "thirsty": "😢",
-        "dark": "😔",
-        "hot": "🔥",
-        "cold": "❄️",
-        "perfect": "😍",
-    }
-    
-    MESSAGE = {
-        "happy": "I'm feeling great!",
-        "thirsty": "I am thirsty.",
-        "dark": "Craving for sunlight!",
-        "hot": "Too hot! Need water!",
-        "cold": "Feeling cold!",
-        "perfect": "Perfect conditions!",
-    }
-    
+# ADS1115 ADC
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
+
+# SSD1306 OLED
+import adafruit_ssd1306
+
+
+class PlantMoodMonitor:
     def __init__(self):
-        self.current_status = self.PERFECT
-        self.emoji = self.EMOJI[self.current_status]
-        self.message = self.MESSAGE[self.current_status]
-    
-    def update(self, temperature, light_lux, soil_moisture):
-        """Update plant status based on sensor data"""
+        # 初始化I2C
+        self.i2c = busio.I2C(board.SCL, board.SDA)
         
-        # Define thresholds
-        SOIL_MIN = 30
-        SOIL_MAX = 80
-        LIGHT_MIN = 100
-        TEMP_MIN = 5
-        TEMP_MAX = 35
-        
-        # Check if all data is valid
-        if temperature is None or light_lux is None or soil_moisture is None:
-            self.current_status = self.HAPPY
-            self.emoji = self.EMOJI[self.current_status]
-            self.message = self.MESSAGE[self.current_status]
-            return
-        
-        # Priority judgment
-        if temperature < TEMP_MIN:
-            self.current_status = self.COLD
-        elif temperature > TEMP_MAX:
-            self.current_status = self.HOT
-        elif light_lux < LIGHT_MIN:
-            self.current_status = self.DARK
-        elif soil_moisture < SOIL_MIN:
-            self.current_status = self.THIRSTY
-        elif soil_moisture > SOIL_MAX:
-            self.current_status = self.THIRSTY
-        elif (SOIL_MIN <= soil_moisture <= SOIL_MAX and 
-              light_lux >= 500 and 
-              15 <= temperature <= 30):
-            self.current_status = self.PERFECT
-        else:
-            self.current_status = self.HAPPY
-        
-        self.emoji = self.EMOJI[self.current_status]
-        self.message = self.MESSAGE[self.current_status]
-
-
-class DataLogger:
-    """Data logging system"""
-    
-    def __init__(self, log_dir="plant_data"):
-        self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(exist_ok=True)
-        self.csv_file = self.log_dir / f"plant_log_{datetime.now().strftime('%Y%m%d')}.csv"
-        self._init_csv()
-    
-    def _init_csv(self):
-        if not self.csv_file.exists():
-            with open(self.csv_file, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    'Timestamp',
-                    'Temperature(C)',
-                    'Light(lux)',
-                    'SoilMoisture(%)',
-                    'SoilVoltage(V)',
-                    'PlantStatus',
-                    'Message'
-                ])
-    
-    def log_data(self, data, plant_status):
+        # 初始化ADC (ADS1115)
         try:
-            with open(self.csv_file, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    f"{data['temperature']:.2f}" if data['temperature'] is not None else "N/A",
-                    f"{data['light']:.2f}" if data['light'] is not None else "N/A",
-                    f"{data['soil_moisture']:.2f}" if data['soil_moisture'] is not None else "N/A",
-                    f"{data['soil_voltage']:.3f}" if data['soil_voltage'] is not None else "N/A",
-                    plant_status.current_status,
-                    plant_status.message
-                ])
+            self.ads = ADS.ADS1115(self.i2c, address=0x48)
+            self.channel = AnalogIn(self.ads, ADS.P0)
+            print("✓ ADS1115 ADC 初始化成功")
         except Exception as e:
-            print(f"✗ Data logging failed: {e}")
-
-
-class SensorStation:
-    """Main sensor station class"""
-    
-    def __init__(self):
-        print("Initializing sensors...\n")
+            print(f"✗ ADS1115 初始化失败: {e}")
+            self.ads = None
         
-        self.bmp280 = None
-        self.bh1750 = None
-        self.soil_channel = None
-        self.oled = None
-        
-        self._init_i2c()
-        self._init_bmp280()
-        self._init_bh1750()
-        self._init_ads1115()
-        self._init_oled()
-        
-        self.plant_status = PlantStatus()
-        self.data_logger = DataLogger()
-        
-        print("\n✓ System initialized successfully!\n")
-    
-    def _init_i2c(self):
+        # 初始化OLED
         try:
-            import board
-            import busio
-            self.i2c = busio.I2C(board.SCL, board.SDA)
-            print("✓ I2C bus initialized")
-        except Exception as e:
-            print(f"✗ I2C initialization failed: {e}")
-            self.i2c = None
-    
-    def _init_bmp280(self):
-        try:
-            import adafruit_bmp280
-            try:
-                self.bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(
-                    self.i2c, address=0x76
-                )
-                print("✓ BMP280 initialized at 0x76")
-            except:
-                self.bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(
-                    self.i2c, address=0x77
-                )
-                print("✓ BMP280 initialized at 0x77")
-            self.bmp280.sea_level_pressure = 1013.25
-        except Exception as e:
-            print(f"✗ BMP280 failed: {e}")
-    
-    def _init_bh1750(self):
-        try:
-            import adafruit_bh1750
-            self.bh1750 = adafruit_bh1750.BH1750(
-                self.i2c, address=0x23
-            )
-            print("✓ BH1750 initialized at 0x23")
-        except Exception as e:
-            print(f"✗ BH1750 failed: {e}")
-    
-    def _init_ads1115(self):
-        try:
-            import adafruit_ads1x15.ads1115 as ADS
-            from adafruit_ads1x15.analog_in import AnalogIn
-            
-            ads = ADS.ADS1115(self.i2c, address=0x48)
-            
-            # Try using ADS.P0
-            try:
-                self.soil_channel = AnalogIn(ads, ADS.P0)
-                print("✓ ADS1115 initialized at 0x48 (using ADS.P0)")
-            except:
-                # Fall back to using 0
-                self.soil_channel = AnalogIn(ads, 0)
-                print("✓ ADS1115 initialized at 0x48 (using channel 0)")
-        except Exception as e:
-            print(f"✗ ADS1115 failed: {e}")
-    
-    def _init_oled(self):
-        try:
-            import adafruit_ssd1306
             self.oled = adafruit_ssd1306.SSD1306_I2C(128, 64, self.i2c, addr=0x3c)
-            print("✓ OLED initialized at 0x3c")
+            self.oled.fill(0)
+            self.oled.show()
+            print("✓ OLED 初始化成功")
         except Exception as e:
-            print(f"✗ OLED failed: {e}")
-    
-    def read_temperature(self):
+            print(f"✗ OLED 初始化失败: {e}")
+            self.oled = None
+        
+        # 创建绘图对象
+        self.image = Image.new("1", (128, 64))
+        self.draw = ImageDraw.Draw(self.image)
+        
+        # 加载字体
         try:
-            if self.bmp280:
-                return self.bmp280.temperature
-        except Exception as e:
-            print(f"✗ Temperature read error: {e}")
-        return None
+            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
+            self.font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+        except:
+            self.font = ImageFont.load_default()
+            self.font_small = ImageFont.load_default()
+        
+        # 湿度阈值
+        self.DRY_THRESHOLD = 40
+        self.WET_THRESHOLD = 70
     
-    def read_light(self):
+    def read_moisture(self):
+        """读取土壤湿度"""
+        if self.ads is None:
+            return None, None
+        
         try:
-            if self.bh1750:
-                return self.bh1750.lux
+            voltage = self.channel.voltage
+            # 转换为百分比 (根据传感器校准调整)
+            # 假设: 干燥=2.5V, 湿润=1.0V
+            moisture_percent = max(0, min(100, (2.5 - voltage) / 1.5 * 100))
+            return voltage, moisture_percent
         except Exception as e:
-            print(f"✗ Light read error: {e}")
-        return None
+            print(f"读取传感器错误: {e}")
+            return None, None
     
-    def read_soil_moisture(self):
-        try:
-            if self.soil_channel:
-                voltage = self.soil_channel.voltage
-                
-                # Calibration values (adjust based on your sensor)
-                DRY_VOLTAGE = 2.5    # voltage when dry
-                WET_VOLTAGE = 1.0    # voltage when wet
-                
-                # Calculate moisture percentage
-                if voltage >= DRY_VOLTAGE:
-                    moisture_percent = 0
-                elif voltage <= WET_VOLTAGE:
-                    moisture_percent = 100
-                else:
-                    moisture_percent = (DRY_VOLTAGE - voltage) / (DRY_VOLTAGE - WET_VOLTAGE) * 100
-                
-                return voltage, moisture_percent
-        except Exception as e:
-            print(f"✗ Soil moisture read error: {e}")
-        
-        return None, None
-    
-    def read_all(self):
-        voltage, moisture = self.read_soil_moisture()
-        
-        data = {
-            'temperature': self.read_temperature(),
-            'light': self.read_light(),
-            'soil_voltage': voltage,
-            'soil_moisture': moisture
-        }
-        return data
-    
-    def print_data(self, data):
-        print("\n" + "="*60)
-        print(f"📱 Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print("="*60)
-        print(f"Plant Status: {self.plant_status.emoji}  {self.plant_status.message}")
-        print("="*60)
-        
-        if data['temperature'] is not None:
-            print(f"🌡️  Temperature:   {data['temperature']:.2f} °C")
+    def get_mood(self, moisture):
+        """根据湿度返回心情"""
+        if moisture is None:
+            return "UNKNOWN", "?"
+        elif moisture < self.DRY_THRESHOLD:
+            return "THIRSTY", ":("
+        elif moisture > self.WET_THRESHOLD:
+            return "HAPPY", ":)"
         else:
-            print(f"🌡️  Temperature:   N/A (sensor error)")
-        
-        if data['light'] is not None:
-            print(f"☀️  Light Level:    {data['light']:.2f} lux")
-        else:
-            print(f"☀️  Light Level:    N/A (sensor error)")
-        
-        if data['soil_moisture'] is not None:
-            print(f"💧 Soil Moisture: {data['soil_moisture']:.1f}%")
-            print(f"   Voltage:      {data['soil_voltage']:.3f}V")
-        else:
-            print(f"💧 Soil Moisture: N/A (sensor error)")
-        
-        print("="*60)
+            return "OK", ":|"
     
-    def update_oled(self, data):
-        if not self.oled:
+    def draw_face(self, mood):
+        """在OLED上绘制表情"""
+        # 清屏
+        self.draw.rectangle((0, 0, 128, 64), fill=0)
+        
+        # 绘制脸的轮廓 (圆形)
+        self.draw.ellipse((34, 2, 94, 62), outline=1)
+        
+        if mood == "HAPPY":
+            # 开心的眼睛
+            self.draw.ellipse((48, 18, 56, 26), fill=1)
+            self.draw.ellipse((72, 18, 80, 26), fill=1)
+            # 微笑
+            self.draw.arc((48, 30, 80, 50), 0, 180, fill=1)
+        
+        elif mood == "THIRSTY":
+            # 悲伤的眼睛
+            self.draw.ellipse((48, 20, 56, 28), fill=1)
+            self.draw.ellipse((72, 20, 80, 28), fill=1)
+            # 悲伤的嘴
+            self.draw.arc((48, 38, 80, 55), 180, 360, fill=1)
+            # 眼泪
+            self.draw.polygon([(52, 30), (50, 38), (54, 38)], fill=1)
+        
+        elif mood == "OK":
+            # 普通眼睛
+            self.draw.ellipse((48, 18, 56, 26), fill=1)
+            self.draw.ellipse((72, 18, 80, 26), fill=1)
+            # 平直的嘴
+            self.draw.line((50, 45, 78, 45), fill=1, width=2)
+        
+        else:
+            # 未知状态 - 问号
+            self.draw.text((58, 25), "?", font=self.font, fill=1)
+    
+    def update_display(self, voltage, moisture, mood):
+        """更新OLED显示"""
+        if self.oled is None:
             return
         
+        # 绘制表情
+        self.draw_face(mood)
+        
+        # 显示数据文字
+        if voltage is not None:
+            self.draw.text((0, 0), f"{voltage:.2f}V", font=self.font_small, fill=1)
+        if moisture is not None:
+            self.draw.text((0, 54), f"{moisture:.0f}%", font=self.font_small, fill=1)
+        
+        # 显示状态
+        self.draw.text((96, 0), mood[:3], font=self.font_small, fill=1)
+        
+        # 更新到OLED
+        self.oled.image(self.image)
+        self.oled.show()
+    
+    def run(self):
+        """主循环"""
+        print("\n=== Plant Mood Monitor 启动 ===")
+        print("按 Ctrl+C 退出\n")
+        
         try:
-            from PIL import Image, ImageDraw, ImageFont
-            
-            image = Image.new('1', (128, 64))
-            draw = ImageDraw.Draw(image)
-            
-            # Try to load font
-            try:
-                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
-                font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
-            except:
-                font = ImageFont.load_default()
-                font_small = font
-            
-            # Draw content
-            draw.text((0, 0), f"Plant Monitor {self.plant_status.emoji}", fill=255, font=font)
-            
-            temp_str = f"{data['temperature']:.1f}C" if data['temperature'] else "N/A"
-            light_str = f"{data['light']:.0f}lux" if data['light'] else "N/A"
-            draw.text((0, 18), f"Temp: {temp_str}  Light: {light_str}", fill=255, font=font_small)
-            
-            moist_str = f"{data['soil_moisture']:.0f}%" if data['soil_moisture'] else "N/A"
-            draw.text((0, 32), f"Soil: {moist_str}", fill=255, font=font_small)
-            
-            draw.text((0, 46), self.plant_status.message, fill=255, font=font_small)
-            
-            self.oled.image(image)
-            self.oled.display()
-        except Exception as e:
-            pass
+            while True:
+                # 读取湿度
+                voltage, moisture = self.read_moisture()
+                
+                # 获取心情
+                mood, emoji = self.get_mood(moisture)
+                
+                # 打印到终端
+                if voltage is not None:
+                    print(f"电压: {voltage:.3f}V | 湿度: {moisture:.1f}% | 状态: {mood} {emoji}")
+                else:
+                    print("传感器读取失败")
+                
+                # 更新显示
+                self.update_display(voltage, moisture, mood)
+                
+                # 等待
+                time.sleep(2)
+        
+        except KeyboardInterrupt:
+            print("\n\n程序退出")
+            # 清屏
+            if self.oled:
+                self.oled.fill(0)
+                self.oled.show()
 
 
 def main():
-    try:
-        station = SensorStation()
-        
-        print("Starting data collection (Press Ctrl+C to exit)\n")
-        
-        while True:
-            data = station.read_all()
-            
-            station.plant_status.update(
-                data['temperature'],
-                data['light'],
-                data['soil_moisture']
-            )
-            
-            station.print_data(data)
-            station.data_logger.log_data(data, station.plant_status)
-            station.update_oled(data)
-            
-            time.sleep(5)
-    
-    except KeyboardInterrupt:
-        print("\n\n✓ Program exited gracefully")
+    monitor = PlantMoodMonitor()
+    monitor.run()
 
 
 if __name__ == "__main__":
