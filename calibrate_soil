@@ -1,66 +1,246 @@
 #!/usr/bin/env python3
 """
-Soil Moisture Sensor Calibration
+Soil Moisture Sensor Calibration Program
+Calibrates the capacitive soil moisture sensor connected to ADS1115 A3
 """
+
+import time
 import board
 import busio
-import time
-
-i2c = busio.I2C(board.SCL, board.SDA)
-
 import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
 
-ads = ADS.ADS1115(i2c, address=0x48)
 
-try:
-    soil_channel = AnalogIn(ads, ADS.P0)
-except:
-    soil_channel = AnalogIn(ads, 0)
+def init_i2c():
+    """Initialize I2C bus"""
+    try:
+        i2c = busio.I2C(board.SCL, board.SDA)
+        print("✓ I2C bus initialized")
+        return i2c
+    except Exception as e:
+        print(f"✗ I2C initialization failed: {e}")
+        return None
 
-print("="*60)
-print("SOIL MOISTURE SENSOR CALIBRATION")
-print("="*60)
 
-print("\n📍 Current Status: Your soil is VERY DRY")
-print("   (你说花盆的土很干)\n")
+def init_ads1115(i2c):
+    """Initialize ADS1115 ADC at 0x48"""
+    try:
+        ads = ADS.ADS1115(i2c, address=0x48)
+        soil_channel = AnalogIn(ads, ADS.P3)
+        print("✓ ADS1115 initialized at 0x48 (Soil sensor on A3)")
+        return soil_channel
+    except Exception as e:
+        print(f"✗ ADS1115 initialization failed: {e}")
+        return None
 
-dry_readings = []
-print("Reading DRY soil voltage (takes 10 readings)...\n")
-for i in range(10):
-    voltage = soil_channel.voltage
-    dry_readings.append(voltage)
-    print(f"  Reading {i+1}: {voltage:.3f}V")
-    time.sleep(0.5)
 
-dry_voltage = sum(dry_readings) / len(dry_readings)
-print(f"\n✓ Average DRY voltage: {dry_voltage:.3f}V")
+def read_voltage(soil_channel, samples=10):
+    """
+    Read voltage from soil sensor with multiple samples for averaging
+    
+    Args:
+        soil_channel: AnalogIn object for soil sensor
+        samples: Number of samples to average
+    
+    Returns:
+        Average voltage reading in volts
+    """
+    try:
+        voltages = []
+        for _ in range(samples):
+            voltage = soil_channel.voltage
+            voltages.append(voltage)
+            time.sleep(0.1)
+        
+        avg_voltage = sum(voltages) / len(voltages)
+        return avg_voltage
+    except Exception as e:
+        print(f"✗ Failed to read voltage: {e}")
+        return None
 
-print("\n" + "="*60)
-print("Now water your plant generously until soil is VERY WET")
-print("(现在给植物浇大量的水，直到土壤非常湿润)")
-print("="*60)
 
-input("\nPress ENTER when soil is WET...")
+def calibrate_dry(soil_channel):
+    """
+    Calibrate dry soil reading
+    
+    Instructions:
+    1. Remove soil sensor from soil/water
+    2. Make sure it's completely dry
+    3. Hold sensor in air
+    """
+    print("\n" + "="*60)
+    print("DRY SOIL CALIBRATION")
+    print("="*60)
+    print("\nInstructions:")
+    print("1. Remove the soil sensor from soil/water")
+    print("2. Make sure it's completely dry")
+    print("3. Hold sensor in air")
+    print("\nPress Enter when ready...")
+    input()
+    
+    print("\nReading dry soil voltage (10 samples, averaging)...")
+    dry_voltage = read_voltage(soil_channel, samples=10)
+    
+    if dry_voltage is not None:
+        print(f"\n✓ Dry soil voltage: {dry_voltage:.4f} V")
+        return dry_voltage
+    else:
+        print("\n✗ Failed to read dry soil voltage")
+        return None
 
-wet_readings = []
-print("\nReading WET soil voltage (takes 10 readings)...\n")
-for i in range(10):
-    voltage = soil_channel.voltage
-    wet_readings.append(voltage)
-    print(f"  Reading {i+1}: {voltage:.3f}V")
-    time.sleep(0.5)
 
-wet_voltage = sum(wet_readings) / len(wet_readings)
-print(f"\n✓ Average WET voltage: {wet_voltage:.3f}V")
+def calibrate_wet(soil_channel):
+    """
+    Calibrate wet soil reading
+    
+    Instructions:
+    1. Place soil sensor in water or wet soil
+    2. Make sure it's completely submerged
+    3. Wait for stabilization
+    """
+    print("\n" + "="*60)
+    print("WET SOIL CALIBRATION")
+    print("="*60)
+    print("\nInstructions:")
+    print("1. Place the soil sensor in water or wet soil")
+    print("2. Make sure it's completely submerged/saturated")
+    print("3. Wait for the reading to stabilize")
+    print("\nPress Enter when ready...")
+    input()
+    
+    print("\nReading wet soil voltage (10 samples, averaging)...")
+    wet_voltage = read_voltage(soil_channel, samples=10)
+    
+    if wet_voltage is not None:
+        print(f"\n✓ Wet soil voltage: {wet_voltage:.4f} V")
+        return wet_voltage
+    else:
+        print("\n✗ Failed to read wet soil voltage")
+        return None
 
-print("\n" + "="*60)
-print("CALIBRATION RESULTS")
-print("="*60)
-print(f"DRY:  {dry_voltage:.3f}V")
-print(f"WET:  {wet_voltage:.3f}V")
-print("="*60)
 
-print("\n📝 Use these values in your code:\n")
-print(f"DRY_VOLTAGE = {dry_voltage:.3f}")
-print(f"WET_VOLTAGE = {wet_voltage:.3f}")
+def test_calibration(soil_channel, dry_voltage, wet_voltage):
+    """
+    Test calibration with real-time readings
+    
+    Args:
+        soil_channel: AnalogIn object
+        dry_voltage: Calibrated dry voltage
+        wet_voltage: Calibrated wet voltage
+    """
+    print("\n" + "="*60)
+    print("CALIBRATION TEST")
+    print("="*60)
+    print("\nTesting calibration with real-time readings...")
+    print("Press Ctrl+C to exit\n")
+    
+    try:
+        for i in range(20):
+            voltage = read_voltage(soil_channel, samples=1)
+            
+            if voltage is not None:
+                # Calculate moisture percentage
+                if voltage >= dry_voltage:
+                    moisture_percent = 0
+                elif voltage <= wet_voltage:
+                    moisture_percent = 100
+                else:
+                    moisture_percent = ((dry_voltage - voltage) / 
+                                       (dry_voltage - wet_voltage)) * 100
+                
+                # Clamp between 0-100
+                moisture_percent = max(0, min(100, moisture_percent))
+                
+                # Display with progress bar
+                bar_length = 30
+                bar = "█" * int(moisture_percent / 100 * bar_length)
+                bar = bar.ljust(bar_length, "░")
+                
+                print(f"Reading {i+1}: Voltage={voltage:.4f}V | "
+                      f"Moisture={moisture_percent:5.1f}% | [{bar}]")
+                
+                time.sleep(0.5)
+    
+    except KeyboardInterrupt:
+        print("\n✓ Test stopped")
+
+
+def save_calibration(dry_voltage, wet_voltage):
+    """
+    Save calibration values to a file for future reference
+    
+    Args:
+        dry_voltage: Calibrated dry voltage
+        wet_voltage: Calibrated wet voltage
+    """
+    try:
+        with open('soil_calibration.txt', 'w') as f:
+            f.write("Soil Moisture Sensor Calibration\n")
+            f.write("="*50 + "\n")
+            f.write(f"Calibration Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Dry Voltage: {dry_voltage:.4f} V\n")
+            f.write(f"Wet Voltage: {wet_voltage:.4f} V\n")
+            f.write("\n")
+            f.write("Usage in plant_monitor_complete.py:\n")
+            f.write(f"DRY_VOLTAGE = {dry_voltage:.3f}\n")
+            f.write(f"WET_VOLTAGE = {wet_voltage:.3f}\n")
+        
+        print(f"\n✓ Calibration saved to soil_calibration.txt")
+    except Exception as e:
+        print(f"\n✗ Failed to save calibration: {e}")
+
+
+def main():
+    """Main calibration program"""
+    print("="*60)
+    print("SOIL MOISTURE SENSOR CALIBRATION")
+    print("Sensor: Capacitive Soil Moisture")
+    print("Connected to: ADS1115 A3 (0x48)")
+    print("="*60)
+    
+    # Initialize I2C and ADS1115
+    i2c = init_i2c()
+    if not i2c:
+        return
+    
+    soil_channel = init_ads1115(i2c)
+    if not soil_channel:
+        return
+    
+    # Perform calibration
+    dry_voltage = calibrate_dry(soil_channel)
+    if dry_voltage is None:
+        return
+    
+    wet_voltage = calibrate_wet(soil_channel)
+    if wet_voltage is None:
+        return
+    
+    # Verify calibration makes sense
+    print("\n" + "="*60)
+    print("CALIBRATION SUMMARY")
+    print("="*60)
+    print(f"Dry Voltage:  {dry_voltage:.4f} V")
+    print(f"Wet Voltage:  {wet_voltage:.4f} V")
+    print(f"Difference:   {abs(dry_voltage - wet_voltage):.4f} V")
+    
+    if dry_voltage == wet_voltage:
+        print("\n✗ ERROR: Dry and wet voltages are the same!")
+        print("  Check that sensor is working properly")
+        return
+    
+    if dry_voltage < wet_voltage:
+        print("\n✗ ERROR: Dry voltage should be HIGHER than wet voltage!")
+        print("  This sensor increases voltage when dry")
+        print("  Please ensure you're using the correct sensor")
+        return
+    
+    print("\n✓ Calibration values are valid!")
+    
+    # Ask user if they want to test
+    print("\nDo you want to test the calibration? (y/n): ", end="")
+    if input().lower() == 'y':
+        test_calibration(soil_channel, dry_voltage, wet_voltage)
+    
+    # Save calibration
+    print("\nD
