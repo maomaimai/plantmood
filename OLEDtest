@@ -1,0 +1,29 @@
+import board
+import busio
+from PIL import Image, ImageDraw, ImageFont
+import adafruit_ssd1306
+
+# 初始化 I2C
+i2c = busio.I2C(board.SCL, board.SDA)
+
+# 初始化 OLED (128x64, 地址 0x3C)
+oled = adafruit_ssd1306.SSD1306_I2C(128, 64, i2c, addr=0x3c)
+
+# 清屏
+oled.fill(0)
+oled.show()
+
+# 创建图像
+image = Image.new("1", (oled.width, oled.height))
+draw = ImageDraw.Draw(image)
+
+# 画文字
+draw.text((0, 0), "PlantMood", fill=255)
+draw.text((0, 20), "OLED Test OK!", fill=255)
+draw.text((0, 40), "Hello Annie!", fill=255)
+
+# 显示
+oled.image(image)
+oled.show()
+
+print("OLED test done!")
