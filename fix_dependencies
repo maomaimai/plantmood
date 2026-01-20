@@ -1,0 +1,110 @@
+#!/bin/bash
+
+echo "========================================="
+echo "Installing RPi GPIO and Blinka"
+echo "========================================="
+
+# Remove old packages
+pip3 uninstall adafruit-blinka -y 2>/dev/null
+pip3 uninstall RPi.GPIO -y 2>/dev/null
+pip3 uninstall rpi-gpio -y 2>/dev/null
+
+# Update system
+sudo apt-get update
+sudo apt-get upgrade -y
+
+# Install essential packages
+sudo apt-get install -y \
+    python3-pip \
+    python3-dev \
+    python3-smbus \
+    i2c-tools \
+    build-essential \
+    python3-rpi.gpio \
+    libatlas-base-dev \
+    libjasper-dev \
+    libharfbuzz0b \
+    libwebp6 \
+    libtiff5 \
+    libjasper1 \
+    libopenjp2-7 \
+    libtk8.6 \
+    libpython3-dev \
+    libharfbuzz0b \
+    libwebp6 \
+    libtiff5 \
+    libatlas-base-dev \
+    libjasper-dev \
+    libharfbuzz0b \
+    libwebp6 \
+    libtiff5
+
+# Upgrade pip
+pip3 install --upgrade pip setuptools wheel
+
+# Install core libraries in order
+echo "Installing core libraries..."
+pip3 install 'RPi.GPIO'
+pip3 install 'adafruit-blinka'
+
+# Install sensor libraries
+echo "Installing sensor libraries..."
+pip3 install 'adafruit-circuitpython-bmp280'
+pip3 install 'adafruit-circuitpython-bh1750'
+pip3 install 'adafruit-circuitpython-ads1x15'
+pip3 install 'adafruit-circuitpython-ssd1306'
+pip3 install 'Pillow'
+pip3 install 'requests'
+
+echo ""
+echo "========================================="
+echo "Installation Complete!"
+echo "========================================="
+echo ""
+echo "Verifying installation..."
+python3 << 'EOF'
+try:
+    import RPi.GPIO
+    print("✓ RPi.GPIO OK")
+except:
+    print("✗ RPi.GPIO FAILED")
+
+try:
+    import board
+    print("✓ board OK")
+except:
+    print("✗ board FAILED")
+
+try:
+    import busio
+    print("✓ busio OK")
+except:
+    print("✗ busio FAILED")
+
+try:
+    import adafruit_bmp280
+    print("✓ adafruit_bmp280 OK")
+except:
+    print("✗ adafruit_bmp280 FAILED")
+
+try:
+    import adafruit_bh1750
+    print("✓ adafruit_bh1750 OK")
+except:
+    print("✗ adafruit_bh1750 FAILED")
+
+try:
+    import adafruit_ads1x15
+    print("✓ adafruit_ads1x15 OK")
+except:
+    print("✗ adafruit_ads1x15 FAILED")
+
+try:
+    import adafruit_ssd1306
+    print("✓ adafruit_ssd1306 OK")
+except:
+    print("✗ adafruit_ssd1306 FAILED")
+EOF
+
+echo ""
+echo "Ready to run plant_monitor_simple.py!"
