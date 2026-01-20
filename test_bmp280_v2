@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+import board
+import busio
+import time
+
+i2c = busio.I2C(board.SCL, board.SDA)
+
+print("Testing BMP280 at 0x76...\n")
+
+try:
+    import adafruit_bmp280
+    
+    # 直接初始化 0x76，不要 try-except
+    bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=0x76)
+    
+    print("✓ BMP280 connected!")
+    
+    # 等待 100ms
+    time.sleep(0.1)
+    
+    # 读取多次
+    for i in range(5):
+        temp = bmp280.temperature
+        pressure = bmp280.pressure
+        print(f"Reading {i+1}: Temp={temp:.2f}°C, Pressure={pressure:.2f}hPa")
+        time.sleep(0.5)
+        
+except Exception as e:
+    print(f"✗ Error: {type(e).__name__}")
+    print(f"  Message: {e}")
+    print("\n尝试其他地址...")
+    
+    try:
+        bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=0x77)
+        print("✓ 在 0x77 找到 BMP280！")
+    except Exception as e2:
+        print(f"✗ 0x77 也失败: {e2}")
