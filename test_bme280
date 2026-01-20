@@ -1,0 +1,22 @@
+import board
+import busio
+import adafruit_bme280
+import time
+
+try:
+    i2c = busio.I2C(board.SCL, board.SDA)
+    bme280 = adafruit_bme280.Adafruit_BME280_I2C(i2c, address=0x76)
+    bme280.sea_level_pressure = 1013.25
+
+    while True:
+        temperature = bme280.temperature
+        humidity = bme280.humidity
+        pressure = bme280.pressure
+
+        print(f"Temperature: {temperature:.2f} C")
+        print(f"Humidity: {humidity:.2f} %")
+        print(f"Pressure: {pressure:.2f} hPa")
+        time.sleep(2)
+
+except Exception as e:
+    print(f"BME280 Test Failed: {e}")
