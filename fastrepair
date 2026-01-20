@@ -1,0 +1,4 @@
+sudo apt-get install -y python3-rpi.gpio
+pip3 install RPi.GPIO --force-reinstall
+pip3 install adafruit-blinka --force-reinstall
+pip3 install adafruit-circuitpython-bmp280 adafruit-circuitpython-bh1750 adafruit-circuitpython-ads1x15 adafruit-circuitpython-ssd1306 Pillow
