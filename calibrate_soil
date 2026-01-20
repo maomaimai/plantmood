@@ -26,7 +26,8 @@ def init_ads1115(i2c):
     """Initialize ADS1115 ADC at 0x48"""
     try:
         ads = ADS.ADS1115(i2c, address=0x48)
-        soil_channel = AnalogIn(ads, ADS.P3)
+        # Use channel 3 directly (A3)
+        soil_channel = AnalogIn(ads, 3)  # ← 改这里，用数字 3 代替 ADS.P3
         print("✓ ADS1115 initialized at 0x48 (Soil sensor on A3)")
         return soil_channel
     except Exception as e:
