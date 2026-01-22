@@ -265,24 +265,38 @@ class SensorStation:
             print("  Install with: pip3 install adafruit-circuitpython-ads1x15")
             self.soil_channel = None # Ensure it's None if init fails
     
-    def _init_oled(self):
-        """
-        Initialize SSD1306 OLED display at address 0x3c
-        Display: 128x64 pixels
-        """
-        try:
-            import adafruit_ssd1306
-            # Add a small delay before OLED init
-            time.sleep(0.5)
-            self.oled = adafruit_ssd1306.SSD1306_I2C(128, 64, self.i2c, addr=0x3c)
-            # Clear OLED at start
-            self.oled.fill(0)
-            self.oled.show()
-            print("✓ OLED display initialized at 0x3c (128x64)")
-        except Exception as e:
-            print(f"✗ OLED initialization failed: {e}")
-            print("  Install with: pip3 install adafruit-circuitpython-ssd1306 and Pillow (pip3 install Pillow)")
-            self.oled = None # Ensure it's None if init fails
+   def _init_oled(self):
+    """
+    Initialize SSD1306 OLED display - auto-detect address
+    Display: 128x64 pixels
+    """
+    try:
+        import adafruit_ssd1306
+        time.sleep(0.1)
+        
+        # Try common OLED addresses
+        oled_addresses = [0x3c, 0x3d]
+        
+        for addr in oled_addresses:
+            try:
+                self.oled = adafruit_ssd1306.SSD1306_I2C(128, 64, self.i2c, addr=addr)
+                self.oled.fill(0)
+                self.oled.show()
+                print(f"✓ OLED display initialized at {hex(addr)} (128x64)")
+                return
+            except Exception:
+                continue
+        
+        # If we get here, no OLED found
+        print(f"✗ OLED not found at addresses: {[hex(a) for a in oled_addresses]}")
+        print(f"  Available I2C devices: run 'i2cdetect -y 1' to find your OLED address")
+        self.oled = None
+        
+    except Exception as e:
+        print(f"✗ OLED initialization failed: {e}")
+        print("  Install with: pip3 install adafruit-circuitpython-ssd1306 and Pillow (pip3 install Pillow)")
+        self.oled = None
+
     
     def read_temperature(self):
         """
